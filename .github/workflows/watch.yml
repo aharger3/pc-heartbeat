@@ -1,0 +1,23 @@
+name: watch
+on:
+  schedule: [{cron: '*/15 * * * *'}]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: stale check
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          ts=$(tr -d '[:space:]' < heartbeat.txt)
+          age=$(( ( $(date +%s) - $(date -d "$ts" +%s) ) / 60 ))
+          echo "age_min=$age"
+          # alert once per outage: window 30-50 min (runs are 15 min apart); reminder at 6h and 24h marks
+          if { [ $age -ge 30 ] && [ $age -lt 50 ]; } || { [ $age -ge 360 ] && [ $age -lt 380 ]; } || { [ $age -ge 1440 ] && [ $age -lt 1460 ]; }; then
+            curl -fsS -H "Title: PC went dark" -H "Priority: high" -H "Tags: warning" \
+              -d "No heartbeat from the PC for ${age} min (last ${ts}). Power or network is out." \
+              "https://ntfy.sh/${NTFY_TOPIC}" >/dev/null && echo "ntfy sent"
+          fi
